@@ -661,6 +661,7 @@ func testConnReadBatchWithKeyValue(t *testing.T, conn *Conn) {
 	keyLen := 2
 	valLen := 100
 	msgCount := 100
+	readOffset := int64(0)
 	messages := makeTestSequenceRandomString(msgCount, keyLen, valLen)
 	if _, err := conn.WriteMessages(messages...); err != nil {
 		t.Fatal(err)
@@ -681,7 +682,15 @@ func testConnReadBatchWithKeyValue(t *testing.T, conn *Conn) {
 	batch := conn.ReadBatchWith(cfg)
 
 	for i := 0; i < msgCount; i++ {
-		keyByteCnt, valByteCnt, err := batch.ReadKeyValue(key, value)
+		keyByteCnt, valByteCnt, offset, err := batch.ReadKeyValue(key, value)
+		if readOffset == 0 {
+			readOffset = offset
+		} else if offset-readOffset != 1 {
+			t.Fatalf("incorrect offset read, expected:%d actual:%d", readOffset+1, offset)
+		} else {
+			readOffset = offset
+		}
+
 		if err != nil {
 			if err = batch.Close(); err != nil {
 				t.Fatalf("error trying to read batch message: %s", err)
