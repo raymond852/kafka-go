@@ -501,6 +501,28 @@ func makeTestSequence(n int) []Message {
 	return msgs
 }
 
+func makeTestSequenceRandomString(n int, keyLen int, valLen int) []Message {
+	base := time.Now()
+	msgs := make([]Message, n)
+	for i := 0; i != n; i++ {
+		msgs[i] = Message{
+			Time:  base.Add(time.Duration(i) * time.Millisecond).Truncate(time.Millisecond),
+			Key:   []byte(randString(keyLen)),
+			Value: []byte(randString(valLen)),
+		}
+	}
+	return msgs
+}
+
+func randString(n int) string {
+	var letterBytes = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Int63()%int64(len(letterBytes))]
+	}
+	return string(b)
+}
+
 func prepareReader(t *testing.T, ctx context.Context, r *Reader, msgs ...Message) {
 	config := r.Config()
 	var conn *Conn
