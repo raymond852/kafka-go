@@ -127,6 +127,78 @@ func (batch *Batch) close() (err error) {
 // where that's convenient.
 func (batch *Batch) Err() error { return batch.err }
 
+// ReadKeyValue reads the key and value of the next message from batch into key, value, returning the
+// number of bytes read, or an error if the next message couldn't be read.
+//
+// If an error is returned the batch cannot be used anymore and calling Read
+// again will keep returning that error. All errors except io.EOF (indicating
+// that the program consumed all messages from the batch) are also returned by
+// Close.
+//
+// The method fails with io.ErrShortBuffer if the buffer passed as argument is
+// too small to hold the message value.
+func (batch *Batch) ReadKeyValue(key []byte, value []byte) (int, int, error) {
+	kn := 0
+	vn := 0
+
+	offset := batch.offset
+
+	_, _, _, err := batch.readMessage(
+		func(r *bufio.Reader, size int, nbytes int) (int, error) {
+			if nbytes < 0 {
+				return size, nil
+			}
+			// make sure there are enough bytes for the message value.  return
+			// errShortRead if the message is truncated.
+			if nbytes > size {
+				return size, errShortRead
+			}
+			kn = nbytes // return number of bytes key read
+			if nbytes > cap(key) {
+				nbytes = cap(key)
+			}
+			if nbytes > len(key) {
+				key = key[:nbytes]
+			}
+			nbytes, err := io.ReadFull(r, key[:nbytes])
+			if err != nil {
+				return size - nbytes, err
+			}
+			return discardN(r, size-nbytes, kn-nbytes)
+		},
+		func(r *bufio.Reader, size int, nbytes int) (int, error) {
+			if nbytes < 0 {
+				return size, nil
+			}
+			// make sure there are enough bytes for the message value.  return
+			// errShortRead if the message is truncated.
+			if nbytes > size {
+				return size, errShortRead
+			}
+			vn = nbytes // return value
+			if nbytes > cap(value) {
+				nbytes = cap(value)
+			}
+			if nbytes > len(value) {
+				value = value[:nbytes]
+			}
+			nbytes, err := io.ReadFull(r, value[:nbytes])
+			if err != nil {
+				return size - nbytes, err
+			}
+			return discardN(r, size-nbytes, vn-nbytes)
+		},
+	)
+
+	if err == nil && vn > len(value) {
+		vn, err = len(value), io.ErrShortBuffer
+		batch.err = io.ErrShortBuffer
+		batch.offset = offset // rollback
+	}
+
+	return kn, vn, err
+}
+
 // Read reads the value of the next message from the batch into b, returning the
 // number of bytes read, or an error if the next message couldn't be read.
 //

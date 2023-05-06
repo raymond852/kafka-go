@@ -272,6 +272,10 @@ func TestConn(t *testing.T) {
 			scenario: "the connection advertises the broker that it is connected to",
 			function: testConnBroker,
 		},
+		{
+			scenario: "read batch with key value",
+			function: testConnReadBatchWithKeyValue,
+		},
 	}
 
 	const (
@@ -651,6 +655,57 @@ func testConnReadBatchWithMaxWait(t *testing.T, conn *Conn) {
 			t.Fatalf("should have timed out, but got: %v", err)
 		}
 	}
+}
+
+func testConnReadBatchWithKeyValue(t *testing.T, conn *Conn) {
+	keyLen := 2
+	valLen := 100
+	msgCount := 100
+	messages := makeTestSequenceRandomString(msgCount, keyLen, valLen)
+	if _, err := conn.WriteMessages(messages...); err != nil {
+		t.Fatal(err)
+	}
+
+	const maxBytes = 10e6 // 10 MB
+
+	value := make([]byte, 200) // 200 B
+	key := make([]byte, 3)     // 3B
+
+	cfg := ReadBatchConfig{
+		MinBytes: maxBytes, // use max for both so that we hit max wait time
+		MaxBytes: maxBytes,
+		MaxWait:  500 * time.Millisecond,
+	}
+
+	// set aa read deadline so the batch will succeed.
+	batch := conn.ReadBatchWith(cfg)
+
+	for i := 0; i < msgCount; i++ {
+		keyByteCnt, valByteCnt, err := batch.ReadKeyValue(key, value)
+		if err != nil {
+			if err = batch.Close(); err != nil {
+				t.Fatalf("error trying to read batch message: %s", err)
+			}
+		}
+		if keyByteCnt != keyLen {
+			t.Fatal("incorrect key length")
+		}
+		if valByteCnt != valLen {
+			t.Fatal("incorrect value length")
+		}
+		if !bytes.Equal(key[:keyByteCnt], messages[i].Key) {
+			t.Fatalf("read key in correctly, expected: %s, actual: %s", string(messages[i].Key), string(key[:keyByteCnt]))
+		}
+		if !bytes.Equal(value[:valByteCnt], messages[i].Value) {
+			t.Fatalf("read value in correctly, expected: %s, actual: %s", string(messages[i].Value), string(value[:valByteCnt]))
+		}
+
+		if batch.HighWaterMark() != int64(msgCount) {
+			t.Fatalf("expected highest offset (watermark) to be %d", msgCount)
+		}
+	}
+
+	batch.Close()
 }
 
 func waitForCoordinator(t *testing.T, conn *Conn, groupID string) {
