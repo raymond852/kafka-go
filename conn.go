@@ -1410,6 +1410,7 @@ func (c *Conn) waitResponse(d *connDeadline, id int32) (deadline time.Time, size
 			// should be impossible to read a correlation id different from the
 			// one it expects. This is a sign that the data we are reading on
 			// the wire is corrupted and the connection needs to be closed.
+			fmt.Println("io.ErrNoProgress because of concurrency")
 			err = io.ErrNoProgress
 			c.rlock.Unlock()
 			break
